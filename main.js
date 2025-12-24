@@ -1,10 +1,9 @@
-const { app, BrowserWindow, ipcMain, Notification, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
 const DATA_FILENAME = 'drink-data.json';
-const REMIND_CHECK_INTERVAL_MS = 60 * 1000;
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const APP_KEY = 'Y3FOEGG7P8Kzudj2UwyQxFC36P2VxDcs';
 const REPORT_ENDPOINT = '/api/ReportRecordProject/receive_report_db';
@@ -12,13 +11,9 @@ const REPORT_ENDPOINT = '/api/ReportRecordProject/receive_report_db';
 const defaultData = {
   records: [],
   settings: {
-    remindIntervalMs: 2 * 60 * 60 * 1000,
-    remindEnabled: true,
     environment: 'dev',
-    userId: '',
-    remindContent: '距离上次喝水已经超过 2 小时，记得喝水哦。'
+    userId: ''
   },
-  lastReminderForDrinkAt: null,
   lastSyncError: ""
 };
 
@@ -35,6 +30,13 @@ function getEffectiveEnvironment() {
   return app.isPackaged ? 'prod' : data.settings.environment;
 }
 
+function getStoredEnvironment(environment) {
+  if (app.isPackaged) {
+    return 'prod';
+  }
+  return environment === 'prod' ? 'prod' : 'dev';
+}
+
 function loadData() {
   try {
     const filePath = getDataPath();
@@ -43,12 +45,13 @@ function loadData() {
     }
     const raw = fs.readFileSync(filePath, 'utf-8');
     const parsed = JSON.parse(raw);
+    const parsedSettings = parsed.settings || {};
     return {
       ...defaultData,
       ...parsed,
       settings: {
-        ...defaultData.settings,
-        ...(parsed.settings || {})
+        environment: getStoredEnvironment(parsedSettings.environment),
+        userId: (parsedSettings.userId || '').trim()
       }
     };
   } catch (error) {
@@ -115,9 +118,6 @@ function buildStatus() {
   const lastDrankAt = data.records.length
     ? Math.max(...data.records.map((record) => record.drankAt))
     : null;
-  const nextReminderAt = data.settings.remindEnabled && lastDrankAt
-    ? lastDrankAt + data.settings.remindIntervalMs
-    : null;
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -130,7 +130,6 @@ function buildStatus() {
   return {
     now,
     lastDrankAt,
-    nextReminderAt,
     todayTotal,
     pendingCount,
     settings: {
@@ -145,39 +144,6 @@ function buildStatus() {
 function sendStatus() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('status', buildStatus());
-  }
-}
-
-function checkReminder() {
-  if (!data.settings.remindEnabled) {
-    return;
-  }
-
-  const lastDrankAt = data.records.length
-    ? Math.max(...data.records.map((record) => record.drankAt))
-    : null;
-
-  if (!lastDrankAt) {
-    return;
-  }
-
-  const elapsed = Date.now() - lastDrankAt;
-  if (elapsed >= data.settings.remindIntervalMs) {
-    if (data.lastReminderForDrinkAt === lastDrankAt) {
-      return;
-    }
-
-    data.lastReminderForDrinkAt = lastDrankAt;
-    saveData();
-
-    if (Notification.isSupported()) {
-      const notification = new Notification({
-        title: '喝水提醒',
-        body: data.settings.remindContent || defaultData.settings.remindContent,
-        icon: iconPath
-      });
-      notification.show();
-    }
   }
 }
 
@@ -250,45 +216,18 @@ ipcMain.handle('add-drink', () => {
 });
 
 ipcMain.handle('update-settings', (event, nextSettings) => {
-  const nextIntervalHours = Number(nextSettings.remindIntervalHours);
-  const remindIntervalMs = Number.isFinite(nextIntervalHours) && nextIntervalHours > 0
-    ? nextIntervalHours * 60 * 60 * 1000
-    : data.settings.remindIntervalMs;
-  const remindContent = (nextSettings.remindContent || '').trim()
-    || data.settings.remindContent;
-  const nextEnvironment = app.isPackaged
-    ? data.settings.environment
-    : (nextSettings.environment === 'prod' ? 'prod' : 'dev');
+  const nextEnvironment = getStoredEnvironment(nextSettings.environment);
 
   data.settings = {
     ...data.settings,
-    remindIntervalMs,
-    remindEnabled: Boolean(nextSettings.remindEnabled),
     environment: nextEnvironment,
-    userId: (nextSettings.userId || '').trim(),
-    remindContent
+    userId: (nextSettings.userId || '').trim()
   };
 
   data.lastSyncError = '';
   saveData();
   sendStatus();
   return buildStatus();
-});
-
-ipcMain.handle('test-reminder', () => {
-  if (app.isPackaged) {
-    return { ok: false, reason: '仅开发环境可用' };
-  }
-  if (Notification.isSupported()) {
-    const notification = new Notification({
-      title: '喝水提醒（测试）',
-      body: data.settings.remindContent || defaultData.settings.remindContent,
-      icon: iconPath
-    });
-    notification.show();
-    return { ok: true };
-  }
-  return { ok: false, reason: '系统不支持通知' };
 });
 
 function formatDateTime(timestamp) {
@@ -327,7 +266,6 @@ app.whenReady().then(() => {
   createWindow();
   sendStatus();
 
-  setInterval(checkReminder, REMIND_CHECK_INTERVAL_MS);
   setInterval(() => {
     void syncPending();
   }, SYNC_INTERVAL_MS);
