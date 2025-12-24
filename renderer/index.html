@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>喝水</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app__header drag-region">
+        <h1>喝水</h1>
+        <button class="ghost" id="toggleSettings">设置</button>
+      </header>
+
+      <section class="card">
+        <div class="metric">
+          <div class="metric__label">今天已喝</div>
+          <div class="metric__value" id="todayTotal">0 ml</div>
+        </div>
+        <div class="metric">
+          <div class="metric__label">上次喝水</div>
+          <div class="metric__value" id="lastDrink">暂无</div>
+        </div>
+        <button class="primary" id="drinkButton">我喝了 300ml</button>
+      </section>
+
+      <section class="card hidden" id="settingsPanel">
+        <label class="field">
+          <span>提醒间隔（小时）</span>
+          <input type="number" min="0.5" step="0.5" id="remindInterval" />
+        </label>
+        <label class="field inline">
+          <input type="checkbox" id="remindEnabled" />
+          <span>开启提醒</span>
+        </label>
+        <label class="field">
+          <span>服务器地址</span>
+          <input type="text" placeholder="https://example.com" id="serverBaseUrl" />
+        </label>
+        <div class="actions">
+          <button class="ghost" id="saveSettings">保存设置</button>
+          <button class="danger" id="resetData">初始化记录</button>
+        </div>
+      </section>
+
+      <footer class="status">
+        <span id="pendingCount">待同步 0 条</span>
+        <span id="syncError" class="error"></span>
+      </footer>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
