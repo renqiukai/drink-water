@@ -15,7 +15,8 @@ const defaultData = {
     remindIntervalMs: 2 * 60 * 60 * 1000,
     remindEnabled: true,
     environment: 'dev',
-    userId: ''
+    userId: '',
+    remindContent: '距离上次喝水已经超过 2 小时，记得喝水哦。'
   },
   lastReminderForDrinkAt: null,
   lastSyncError: ""
@@ -24,6 +25,15 @@ const defaultData = {
 let mainWindow;
 let data = { ...defaultData };
 const iconPath = path.join(__dirname, 'water.png');
+
+app.setName('DrinkWater');
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.drinkwater.app');
+}
+
+function getEffectiveEnvironment() {
+  return app.isPackaged ? 'prod' : data.settings.environment;
+}
 
 function loadData() {
   try {
@@ -105,6 +115,9 @@ function buildStatus() {
   const lastDrankAt = data.records.length
     ? Math.max(...data.records.map((record) => record.drankAt))
     : null;
+  const nextReminderAt = data.settings.remindEnabled && lastDrankAt
+    ? lastDrankAt + data.settings.remindIntervalMs
+    : null;
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -117,9 +130,14 @@ function buildStatus() {
   return {
     now,
     lastDrankAt,
+    nextReminderAt,
     todayTotal,
     pendingCount,
-    settings: data.settings,
+    settings: {
+      ...data.settings,
+      environment: getEffectiveEnvironment(),
+      environmentLocked: app.isPackaged
+    },
     lastSyncError: data.lastSyncError
   };
 }
@@ -155,7 +173,8 @@ function checkReminder() {
     if (Notification.isSupported()) {
       const notification = new Notification({
         title: '喝水提醒',
-        body: '距离上次喝水已经超过 2 小时，记得喝水哦。'
+        body: data.settings.remindContent || defaultData.settings.remindContent,
+        icon: iconPath
       });
       notification.show();
     }
@@ -163,7 +182,8 @@ function checkReminder() {
 }
 
 async function syncPending() {
-  const { environment, userId } = data.settings;
+  const { userId } = data.settings;
+  const environment = getEffectiveEnvironment();
   if (!userId) {
     data.lastSyncError = '请先设置用户 ID';
     saveData();
@@ -234,19 +254,41 @@ ipcMain.handle('update-settings', (event, nextSettings) => {
   const remindIntervalMs = Number.isFinite(nextIntervalHours) && nextIntervalHours > 0
     ? nextIntervalHours * 60 * 60 * 1000
     : data.settings.remindIntervalMs;
+  const remindContent = (nextSettings.remindContent || '').trim()
+    || data.settings.remindContent;
+  const nextEnvironment = app.isPackaged
+    ? data.settings.environment
+    : (nextSettings.environment === 'prod' ? 'prod' : 'dev');
 
   data.settings = {
     ...data.settings,
     remindIntervalMs,
     remindEnabled: Boolean(nextSettings.remindEnabled),
-    environment: nextSettings.environment === 'prod' ? 'prod' : 'dev',
-    userId: (nextSettings.userId || '').trim()
+    environment: nextEnvironment,
+    userId: (nextSettings.userId || '').trim(),
+    remindContent
   };
 
   data.lastSyncError = '';
   saveData();
   sendStatus();
   return buildStatus();
+});
+
+ipcMain.handle('test-reminder', () => {
+  if (app.isPackaged) {
+    return { ok: false, reason: '仅开发环境可用' };
+  }
+  if (Notification.isSupported()) {
+    const notification = new Notification({
+      title: '喝水提醒（测试）',
+      body: data.settings.remindContent || defaultData.settings.remindContent,
+      icon: iconPath
+    });
+    notification.show();
+    return { ok: true };
+  }
+  return { ok: false, reason: '系统不支持通知' };
 });
 
 function formatDateTime(timestamp) {
@@ -275,6 +317,10 @@ ipcMain.handle('reset-data', () => {
 
 app.whenReady().then(() => {
   data = loadData();
+  if (app.isPackaged && data.settings.environment !== 'prod') {
+    data.settings.environment = 'prod';
+    saveData();
+  }
   if (app.dock && fs.existsSync(iconPath)) {
     app.dock.setIcon(iconPath);
   }

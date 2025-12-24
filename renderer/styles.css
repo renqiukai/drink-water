@@ -56,6 +56,17 @@ body {
   font-weight: 600;
 }
 
+.inline-time {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.next-reminder {
+  font-size: 12px;
+  color: #6b7b84;
+}
+
 .primary {
   background: #2f7cff;
   color: #fff;
@@ -127,6 +138,16 @@ body {
   font-size: 12px;
   background: #fff;
   -webkit-app-region: no-drag;
+}
+
+.field select:disabled {
+  background: #f1f4f6;
+  color: #8797a1;
+}
+
+.hint {
+  font-size: 11px;
+  color: #8797a1;
 }
 
 .status {
