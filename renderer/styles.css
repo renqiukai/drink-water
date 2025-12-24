@@ -120,6 +120,15 @@ body {
   -webkit-app-region: no-drag;
 }
 
+.field select {
+  border: 1px solid #d5e2e6;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: #fff;
+  -webkit-app-region: no-drag;
+}
+
 .status {
   display: flex;
   justify-content: space-between;

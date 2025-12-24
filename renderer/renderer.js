@@ -7,7 +7,8 @@ const toggleSettingsButton = document.getElementById('toggleSettings');
 const settingsPanel = document.getElementById('settingsPanel');
 const remindIntervalInput = document.getElementById('remindInterval');
 const remindEnabledInput = document.getElementById('remindEnabled');
-const serverBaseUrlInput = document.getElementById('serverBaseUrl');
+const userIdInput = document.getElementById('userId');
+const environmentSelect = document.getElementById('environment');
 const saveSettingsButton = document.getElementById('saveSettings');
 const resetDataButton = document.getElementById('resetData');
 
@@ -28,7 +29,8 @@ function renderStatus(status) {
   const intervalHours = status.settings.remindIntervalMs / (60 * 60 * 1000);
   remindIntervalInput.value = String(intervalHours);
   remindEnabledInput.checked = Boolean(status.settings.remindEnabled);
-  serverBaseUrlInput.value = status.settings.serverBaseUrl || '';
+  userIdInput.value = status.settings.userId || '';
+  environmentSelect.value = status.settings.environment || 'dev';
 }
 
 async function init() {
@@ -48,11 +50,13 @@ async function saveSettings() {
   const nextSettings = {
     remindIntervalHours: Number(remindIntervalInput.value),
     remindEnabled: remindEnabledInput.checked,
-    serverBaseUrl: serverBaseUrlInput.value
+    userId: userIdInput.value,
+    environment: environmentSelect.value
   };
 
   const status = await window.drinkApi.updateSettings(nextSettings);
   renderStatus(status);
+  settingsPanel.classList.add('hidden');
 }
 
 drinkButton.addEventListener('click', async () => {

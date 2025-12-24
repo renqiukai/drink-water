@@ -6,13 +6,16 @@ const crypto = require('crypto');
 const DATA_FILENAME = 'drink-data.json';
 const REMIND_CHECK_INTERVAL_MS = 60 * 1000;
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const APP_KEY = 'Y3FOEGG7P8Kzudj2UwyQxFC36P2VxDcs';
+const REPORT_ENDPOINT = '/api/ReportRecordProject/receive_report_db';
 
 const defaultData = {
   records: [],
   settings: {
     remindIntervalMs: 2 * 60 * 60 * 1000,
     remindEnabled: true,
-    serverBaseUrl: ""
+    environment: 'dev',
+    userId: ''
   },
   lastReminderForDrinkAt: null,
   lastSyncError: ""
@@ -160,7 +163,18 @@ function checkReminder() {
 }
 
 async function syncPending() {
-  const { serverBaseUrl } = data.settings;
+  const { environment, userId } = data.settings;
+  if (!userId) {
+    data.lastSyncError = '请先设置用户 ID';
+    saveData();
+    sendStatus();
+    return;
+  }
+
+  const serverBaseUrl = environment === 'prod'
+    ? 'https://qkode.renqiukai.com'
+    : 'http://127.0.0.1:8000';
+
   if (!serverBaseUrl) {
     return;
   }
@@ -172,15 +186,23 @@ async function syncPending() {
 
   try {
     for (const record of pending) {
-      const response = await fetch(`${serverBaseUrl}/api/drinks`, {
+      const drinkTime = formatDateTime(record.drankAt);
+      const response = await fetch(`${serverBaseUrl}${REPORT_ENDPOINT}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          id: record.id,
-          amountMl: record.amountMl,
-          drankAt: record.drankAt
+          app_key: APP_KEY,
+          index_field: 'userid_drinktime',
+          docs: [
+            {
+              userid_drinktime: `${userId}_${drinkTime}`,
+              user_id: userId,
+              water: record.amountMl,
+              drink_time: drinkTime
+            }
+          ]
         })
       });
 
@@ -217,13 +239,27 @@ ipcMain.handle('update-settings', (event, nextSettings) => {
     ...data.settings,
     remindIntervalMs,
     remindEnabled: Boolean(nextSettings.remindEnabled),
-    serverBaseUrl: (nextSettings.serverBaseUrl || "").trim()
+    environment: nextSettings.environment === 'prod' ? 'prod' : 'dev',
+    userId: (nextSettings.userId || '').trim()
   };
 
+  data.lastSyncError = '';
   saveData();
   sendStatus();
   return buildStatus();
 });
+
+function formatDateTime(timestamp) {
+  const date = new Date(timestamp);
+  const pad = (value) => String(value).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
 
 ipcMain.handle('reset-data', () => {
   data = {
