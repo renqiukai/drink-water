@@ -138,6 +138,11 @@ body {
   color: #8797a1;
 }
 
+.field input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+}
+
 .hint {
   font-size: 11px;
   color: #8797a1;

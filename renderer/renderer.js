@@ -8,20 +8,45 @@ const settingsPanel = document.getElementById('settingsPanel');
 const userIdInput = document.getElementById('userId');
 const environmentSelect = document.getElementById('environment');
 const environmentHint = document.getElementById('environmentHint');
+const minimizeToTrayInput = document.getElementById('minimizeToTray');
+const autoLaunchInput = document.getElementById('autoLaunch');
 const saveSettingsButton = document.getElementById('saveSettings');
 const resetDataButton = document.getElementById('resetData');
 
-function formatTime(timestamp) {
+function formatTime(timestamp, now) {
   if (!timestamp) {
     return '暂无';
   }
   const date = new Date(timestamp);
-  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const nowDate = new Date(now || Date.now());
+  const time = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const startOfDay = (value) => {
+    const copy = new Date(value);
+    copy.setHours(0, 0, 0, 0);
+    return copy.getTime();
+  };
+  const dayDiff = Math.floor((startOfDay(nowDate) - startOfDay(date)) / (24 * 60 * 60 * 1000));
+  if (dayDiff <= 0) {
+    return time;
+  }
+  if (dayDiff === 1) {
+    return `昨天 ${time}`;
+  }
+  if (dayDiff === 2) {
+    return `前天 ${time}`;
+  }
+  if (dayDiff < 7) {
+    return `${dayDiff} 天前 ${time}`;
+  }
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day} ${time}`;
 }
 
 function renderStatus(status) {
   todayTotalEl.textContent = `${status.todayTotal} ml`;
-  lastDrinkEl.textContent = formatTime(status.lastDrankAt);
+  lastDrinkEl.textContent = formatTime(status.lastDrankAt, status.now);
   pendingCountEl.textContent = `待同步 ${status.pendingCount} 条`;
   syncErrorEl.textContent = status.lastSyncError ? `同步失败：${status.lastSyncError}` : '';
 
@@ -29,6 +54,8 @@ function renderStatus(status) {
   environmentSelect.value = status.settings.environment || 'dev';
   environmentSelect.disabled = Boolean(status.settings.environmentLocked);
   environmentHint.classList.toggle('hidden', !status.settings.environmentLocked);
+  minimizeToTrayInput.checked = status.settings.minimizeToTray !== false;
+  autoLaunchInput.checked = Boolean(status.settings.autoLaunch);
 }
 
 async function init() {
@@ -47,7 +74,9 @@ function toggleSettings() {
 async function saveSettings() {
   const nextSettings = {
     userId: userIdInput.value,
-    environment: environmentSelect.value
+    environment: environmentSelect.value,
+    minimizeToTray: minimizeToTrayInput.checked,
+    autoLaunch: autoLaunchInput.checked
   };
 
   const status = await window.drinkApi.updateSettings(nextSettings);

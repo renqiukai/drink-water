@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -7,17 +7,23 @@ const DATA_FILENAME = 'drink-data.json';
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const APP_KEY = 'Y3FOEGG7P8Kzudj2UwyQxFC36P2VxDcs';
 const REPORT_ENDPOINT = '/api/ReportRecordProject/receive_report_db';
+const DAY_CHECK_INTERVAL_MS = 60 * 1000;
 
 const defaultData = {
   records: [],
   settings: {
     environment: 'dev',
-    userId: ''
+    userId: '',
+    minimizeToTray: true,
+    autoLaunch: false
   },
   lastSyncError: ""
 };
 
 let mainWindow;
+let tray;
+let isQuitting = false;
+let lastDayKey = null;
 let data = { ...defaultData };
 const iconPath = path.join(__dirname, 'water.png');
 
@@ -51,7 +57,9 @@ function loadData() {
       ...parsed,
       settings: {
         environment: getStoredEnvironment(parsedSettings.environment),
-        userId: (parsedSettings.userId || '').trim()
+        userId: (parsedSettings.userId || '').trim(),
+        minimizeToTray: parsedSettings.minimizeToTray !== false,
+        autoLaunch: Boolean(parsedSettings.autoLaunch)
       }
     };
   } catch (error) {
@@ -92,6 +100,82 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  mainWindow.on('close', (event) => {
+    if (isQuitting || !data.settings.minimizeToTray) {
+      return;
+    }
+    event.preventDefault();
+    mainWindow.hide();
+  });
+
+  mainWindow.on('minimize', (event) => {
+    if (!data.settings.minimizeToTray) {
+      return;
+    }
+    event.preventDefault();
+    mainWindow.hide();
+  });
+}
+
+function applyAppSettings() {
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.hide();
+  }
+  app.setLoginItemSettings({
+    openAtLogin: Boolean(data.settings.autoLaunch)
+  });
+}
+
+function createTray() {
+  if (tray) {
+    return;
+  }
+  const trayIcon = nativeImage.createFromPath(iconPath);
+  if (process.platform === 'darwin') {
+    const resized = trayIcon.resize({ width: 16, height: 16 });
+    resized.setTemplateImage(true);
+    tray = new Tray(resized);
+  } else {
+    tray = new Tray(trayIcon);
+  }
+  tray.setToolTip('DrinkWater');
+  tray.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createWindow();
+      sendStatus();
+      return;
+    }
+    if (mainWindow.isVisible()) {
+      mainWindow.hide();
+    } else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: '显示窗口',
+      click: () => {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          createWindow();
+          sendStatus();
+          return;
+        }
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    },
+    {
+      label: '退出',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+  tray.setContextMenu(menu);
 }
 
 function addDrinkRecord() {
@@ -139,6 +223,12 @@ function buildStatus() {
     },
     lastSyncError: data.lastSyncError
   };
+}
+
+function getDayKey(timestamp) {
+  const date = new Date(timestamp);
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 function sendStatus() {
@@ -221,11 +311,14 @@ ipcMain.handle('update-settings', (event, nextSettings) => {
   data.settings = {
     ...data.settings,
     environment: nextEnvironment,
-    userId: (nextSettings.userId || '').trim()
+    userId: (nextSettings.userId || '').trim(),
+    minimizeToTray: nextSettings.minimizeToTray !== false,
+    autoLaunch: Boolean(nextSettings.autoLaunch)
   };
 
   data.lastSyncError = '';
   saveData();
+  applyAppSettings();
   sendStatus();
   return buildStatus();
 });
@@ -263,18 +356,33 @@ app.whenReady().then(() => {
   if (app.dock && fs.existsSync(iconPath)) {
     app.dock.setIcon(iconPath);
   }
+  applyAppSettings();
+  createTray();
   createWindow();
   sendStatus();
+  lastDayKey = getDayKey(Date.now());
 
   setInterval(() => {
     void syncPending();
   }, SYNC_INTERVAL_MS);
+
+  setInterval(() => {
+    const nextDayKey = getDayKey(Date.now());
+    if (nextDayKey !== lastDayKey) {
+      lastDayKey = nextDayKey;
+      sendStatus();
+    }
+  }, DAY_CHECK_INTERVAL_MS);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
 });
 
 app.on('window-all-closed', () => {

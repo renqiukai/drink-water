@@ -52,3 +52,8 @@ Drink Water (Electron)
 - `main.js` 主进程（提醒/存储/上报）
 - `preload.js` 安全桥接
 - `renderer/` UI
+
+需求
+
+- 应用可以收到 mac 的顶部菜单 win 的右下角
+- 如果应用一直开着跨天了，是需要更新喝水数据的
