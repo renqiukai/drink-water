@@ -7,12 +7,14 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "dev": "electronmon .",
     "distw": "electron-builder --win",
     "dist": "electron-builder --mac"
   },
   "devDependencies": {
     "electron": "^30.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "electronmon": "^2.0.4"
   },
   "build": {
     "appId": "com.drinkwater.app",

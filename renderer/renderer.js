@@ -4,12 +4,16 @@ const pendingCountEl = document.getElementById('pendingCount');
 const syncErrorEl = document.getElementById('syncError');
 const drinkButton = document.getElementById('drinkButton');
 const toggleSettingsButton = document.getElementById('toggleSettings');
-const settingsPanel = document.getElementById('settingsPanel');
+const settingsDialog = document.getElementById('settingsDialog');
+const closeSettingsButton = document.getElementById('closeSettings');
 const userIdInput = document.getElementById('userId');
 const environmentSelect = document.getElementById('environment');
 const environmentHint = document.getElementById('environmentHint');
 const minimizeToTrayInput = document.getElementById('minimizeToTray');
 const autoLaunchInput = document.getElementById('autoLaunch');
+const reminderEnabledInput = document.getElementById('reminderEnabled');
+const reminderIntervalHoursInput = document.getElementById('reminderIntervalHours');
+const testReminderButton = document.getElementById('testReminder');
 const saveSettingsButton = document.getElementById('saveSettings');
 const resetDataButton = document.getElementById('resetData');
 
@@ -56,6 +60,9 @@ function renderStatus(status) {
   environmentHint.classList.toggle('hidden', !status.settings.environmentLocked);
   minimizeToTrayInput.checked = status.settings.minimizeToTray !== false;
   autoLaunchInput.checked = Boolean(status.settings.autoLaunch);
+  reminderEnabledInput.checked = status.settings.reminderEnabled !== false;
+  reminderIntervalHoursInput.value = String(status.settings.reminderIntervalHours || 2);
+  reminderIntervalHoursInput.disabled = !reminderEnabledInput.checked;
 }
 
 async function init() {
@@ -68,7 +75,11 @@ async function init() {
 }
 
 function toggleSettings() {
-  settingsPanel.classList.toggle('hidden');
+  if (settingsDialog.open) {
+    settingsDialog.close();
+  } else {
+    settingsDialog.showModal();
+  }
 }
 
 async function saveSettings() {
@@ -76,12 +87,14 @@ async function saveSettings() {
     userId: userIdInput.value,
     environment: environmentSelect.value,
     minimizeToTray: minimizeToTrayInput.checked,
-    autoLaunch: autoLaunchInput.checked
+    autoLaunch: autoLaunchInput.checked,
+    reminderEnabled: reminderEnabledInput.checked,
+    reminderIntervalHours: reminderIntervalHoursInput.value
   };
 
   const status = await window.drinkApi.updateSettings(nextSettings);
   renderStatus(status);
-  settingsPanel.classList.add('hidden');
+  settingsDialog.close();
 }
 
 drinkButton.addEventListener('click', async () => {
@@ -90,7 +103,22 @@ drinkButton.addEventListener('click', async () => {
 });
 
 toggleSettingsButton.addEventListener('click', toggleSettings);
+closeSettingsButton.addEventListener('click', () => settingsDialog.close());
+settingsDialog.addEventListener('click', (event) => {
+  if (event.target === settingsDialog) {
+    settingsDialog.close();
+  }
+});
 saveSettingsButton.addEventListener('click', saveSettings);
+testReminderButton.addEventListener('click', async () => {
+  const result = await window.drinkApi.testReminder();
+  if (!result.ok) {
+    window.alert(result.message || '测试提醒失败');
+  }
+});
+reminderEnabledInput.addEventListener('change', () => {
+  reminderIntervalHoursInput.disabled = !reminderEnabledInput.checked;
+});
 resetDataButton.addEventListener('click', async () => {
   const confirmed = window.confirm('确定要清空所有喝水记录吗？');
   if (!confirmed) {

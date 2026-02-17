@@ -27,34 +27,47 @@
       <button class="primary" id="drinkButton">我喝了 300ml</button>
     </section>
 
-    <section class="card hidden" id="settingsPanel">
-      <div class="actions actions--top">
-        <button class="ghost" id="saveSettings">保存设置</button>
+    <dialog class="settings-dialog" id="settingsDialog">
+      <div class="settings-dialog__card">
+        <header class="settings-dialog__header">
+          <h2>设置</h2>
+          <button class="ghost" id="closeSettings">关闭</button>
+        </header>
+        <label class="field">
+          <span>用户名</span>
+          <input type="text" placeholder="demo-001" id="userId" />
+        </label>
+        <label class="field">
+          <span>环境</span>
+          <select id="environment">
+            <option value="dev">开发环境</option>
+            <option value="prod">生产环境</option>
+          </select>
+          <small class="hint hidden" id="environmentHint">打包后不可修改</small>
+        </label>
+        <label class="field inline">
+          <input type="checkbox" id="minimizeToTray" />
+          <span>最小化到托盘</span>
+        </label>
+        <label class="field inline">
+          <input type="checkbox" id="autoLaunch" />
+          <span>开机自启</span>
+        </label>
+        <label class="field inline">
+          <input type="checkbox" id="reminderEnabled" />
+          <span>开启提醒</span>
+        </label>
+        <label class="field">
+          <span>提醒间隔（小时）</span>
+          <input type="number" min="1" step="1" id="reminderIntervalHours" />
+        </label>
+        <div class="actions">
+          <button class="ghost" id="testReminder">测试提醒</button>
+          <button class="danger" id="resetData">初始化记录</button>
+          <button class="primary" id="saveSettings">保存设置</button>
+        </div>
       </div>
-      <label class="field">
-        <span>用户名</span>
-        <input type="text" placeholder="demo-001" id="userId" />
-      </label>
-      <label class="field">
-        <span>环境</span>
-        <select id="environment">
-          <option value="dev">开发环境</option>
-          <option value="prod">生产环境</option>
-        </select>
-        <small class="hint hidden" id="environmentHint">打包后不可修改</small>
-      </label>
-      <label class="field inline">
-        <input type="checkbox" id="minimizeToTray" />
-        <span>最小化到托盘</span>
-      </label>
-      <label class="field inline">
-        <input type="checkbox" id="autoLaunch" />
-        <span>开机自启</span>
-      </label>
-      <div class="actions">
-        <button class="danger" id="resetData">初始化记录</button>
-      </div>
-    </section>
+    </dialog>
 
     <footer class="status">
       <span id="pendingCount">待同步 0 条</span>

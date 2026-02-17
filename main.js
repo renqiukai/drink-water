@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -8,6 +8,8 @@ const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const APP_KEY = 'Y3FOEGG7P8Kzudj2UwyQxFC36P2VxDcs';
 const REPORT_ENDPOINT = '/api/ReportRecordProject/receive_report_db';
 const DAY_CHECK_INTERVAL_MS = 60 * 1000;
+const REMINDER_CHECK_INTERVAL_MS = 60 * 1000;
+const DEFAULT_REMINDER_INTERVAL_HOURS = 2;
 
 const defaultData = {
   records: [],
@@ -15,7 +17,9 @@ const defaultData = {
     environment: 'dev',
     userId: '',
     minimizeToTray: true,
-    autoLaunch: false
+    autoLaunch: false,
+    reminderEnabled: true,
+    reminderIntervalHours: DEFAULT_REMINDER_INTERVAL_HOURS
   },
   lastSyncError: ""
 };
@@ -25,6 +29,10 @@ let tray;
 let isQuitting = false;
 let lastDayKey = null;
 let data = { ...defaultData };
+let reminderCheckpoint = {
+  recordId: null,
+  slot: 0
+};
 const iconPath = path.join(__dirname, 'water.png');
 
 app.setName('DrinkWater');
@@ -59,7 +67,9 @@ function loadData() {
         environment: getStoredEnvironment(parsedSettings.environment),
         userId: (parsedSettings.userId || '').trim(),
         minimizeToTray: parsedSettings.minimizeToTray !== false,
-        autoLaunch: Boolean(parsedSettings.autoLaunch)
+        autoLaunch: Boolean(parsedSettings.autoLaunch),
+        reminderEnabled: parsedSettings.reminderEnabled !== false,
+        reminderIntervalHours: normalizeReminderIntervalHours(parsedSettings.reminderIntervalHours)
       }
     };
   } catch (error) {
@@ -74,6 +84,14 @@ function saveData() {
 
 function getDataPath() {
   return path.join(app.getPath('userData'), DATA_FILENAME);
+}
+
+function normalizeReminderIntervalHours(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_REMINDER_INTERVAL_HOURS;
+  }
+  return parsed;
 }
 
 function createWindow() {
@@ -190,11 +208,114 @@ function addDrinkRecord() {
 
   data.records.push(record);
   data.lastSyncError = "";
+  reminderCheckpoint = { recordId: record.id, slot: 0 };
   saveData();
   sendStatus();
   void syncPending();
 
   return record;
+}
+
+function showReminderNotification(lastDrankAt) {
+  const lastDrinkTime = formatDateTime(lastDrankAt);
+  const notification = new Notification({
+    title: '该喝水了',
+    body: `距离上次喝水（${lastDrinkTime}）已经超过 ${data.settings.reminderIntervalHours} 小时`
+  });
+
+  notification.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createWindow();
+      sendStatus();
+      return;
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  notification.show();
+}
+
+function showWelcomeNotification() {
+  if (!Notification.isSupported()) {
+    return;
+  }
+
+  const notification = new Notification({
+    title: 'DrinkWater 已启动',
+    body: '欢迎回来，记得及时补充水分。'
+  });
+
+  notification.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createWindow();
+      sendStatus();
+      return;
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  notification.show();
+}
+
+function showTestReminderNotification() {
+  if (!Notification.isSupported()) {
+    return false;
+  }
+
+  const notification = new Notification({
+    title: '提醒测试',
+    body: '这是一条测试提醒通知。'
+  });
+
+  notification.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createWindow();
+      sendStatus();
+      return;
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  notification.show();
+  return true;
+}
+
+function maybeTriggerReminder() {
+  if (!data.settings.reminderEnabled || data.records.length === 0) {
+    return;
+  }
+  if (!Notification.isSupported()) {
+    return;
+  }
+
+  const lastRecord = data.records.reduce((latest, record) => {
+    if (!latest || record.drankAt > latest.drankAt) {
+      return record;
+    }
+    return latest;
+  }, null);
+
+  if (!lastRecord) {
+    return;
+  }
+
+  const intervalMs = normalizeReminderIntervalHours(data.settings.reminderIntervalHours) * 60 * 60 * 1000;
+  const elapsedMs = Date.now() - lastRecord.drankAt;
+  const slot = Math.floor(elapsedMs / intervalMs);
+  if (slot < 1) {
+    reminderCheckpoint = { recordId: lastRecord.id, slot: 0 };
+    return;
+  }
+
+  if (reminderCheckpoint.recordId === lastRecord.id && reminderCheckpoint.slot === slot) {
+    return;
+  }
+
+  reminderCheckpoint = { recordId: lastRecord.id, slot };
+  showReminderNotification(lastRecord.drankAt);
 }
 
 function buildStatus() {
@@ -313,14 +434,25 @@ ipcMain.handle('update-settings', (event, nextSettings) => {
     environment: nextEnvironment,
     userId: (nextSettings.userId || '').trim(),
     minimizeToTray: nextSettings.minimizeToTray !== false,
-    autoLaunch: Boolean(nextSettings.autoLaunch)
+    autoLaunch: Boolean(nextSettings.autoLaunch),
+    reminderEnabled: nextSettings.reminderEnabled !== false,
+    reminderIntervalHours: normalizeReminderIntervalHours(nextSettings.reminderIntervalHours)
   };
 
   data.lastSyncError = '';
   saveData();
   applyAppSettings();
   sendStatus();
+  maybeTriggerReminder();
   return buildStatus();
+});
+
+ipcMain.handle('test-reminder', () => {
+  const shown = showTestReminderNotification();
+  if (!shown) {
+    return { ok: false, message: '当前系统不支持通知' };
+  }
+  return { ok: true };
 });
 
 function formatDateTime(timestamp) {
@@ -360,6 +492,8 @@ app.whenReady().then(() => {
   createTray();
   createWindow();
   sendStatus();
+  showWelcomeNotification();
+  maybeTriggerReminder();
   lastDayKey = getDayKey(Date.now());
 
   setInterval(() => {
@@ -373,6 +507,10 @@ app.whenReady().then(() => {
       sendStatus();
     }
   }, DAY_CHECK_INTERVAL_MS);
+
+  setInterval(() => {
+    maybeTriggerReminder();
+  }, REMINDER_CHECK_INTERVAL_MS);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
